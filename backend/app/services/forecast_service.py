@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 from app.models.entities import BillingOccurrence, PaymentRecord, Subscription, SubscriptionGroup, SubscriptionRecommendation
-from app.services.billing_calculator import add_months, month_key, normalize_amount
+from app.services.billing_calculator import add_months, month_key, next_occurrence_dates, normalize_amount
 from app.services.occurrence_service import OccurrenceService
 
 
@@ -58,14 +58,17 @@ class ForecastService:
 
     def dashboard(self, owner_subject_id: str, month: date | None = None) -> dict:
         month = (month or date.today()).replace(day=1)
+        today = date.today()
         next_month = add_months(month, 1)
         after_next = add_months(month, 2)
+        year_end = add_months(month, 12)
         self.ensure_occurrences(owner_subject_id, months_ahead=14)
         current = self.session.scalars(select(BillingOccurrence).where(BillingOccurrence.owner_subject_id == owner_subject_id, BillingOccurrence.starts_on >= month, BillingOccurrence.starts_on < next_month, BillingOccurrence.status != "cancelled")).all()
         next_items = self.session.scalars(select(BillingOccurrence).where(BillingOccurrence.owner_subject_id == owner_subject_id, BillingOccurrence.starts_on >= next_month, BillingOccurrence.starts_on < after_next, BillingOccurrence.status != "cancelled")).all()
         paid = self.session.scalars(select(PaymentRecord).where(PaymentRecord.owner_subject_id == owner_subject_id, PaymentRecord.paid_at >= month, PaymentRecord.paid_at < next_month)).all()
         due = sum(o.amount_minor for o in current)
-        paid_sum = sum(p.amount_minor for p in paid)
+        auto_paid_sum = sum(o.amount_minor for o in current if o.starts_on < today and o.status == "predicted")
+        paid_sum = sum(p.amount_minor for p in paid) + auto_paid_sum
         active_subs = self.session.scalar(select(func.count(Subscription.id)).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None), Subscription.status.in_(["active", "trial"]))) or 0
         active_groups = self.session.scalar(select(func.count(SubscriptionGroup.id)).where(SubscriptionGroup.owner_subject_id == owner_subject_id, SubscriptionGroup.deleted_at.is_(None), SubscriptionGroup.status.in_(["active", "trial"]))) or 0
         recs = self.session.scalar(select(func.count(SubscriptionRecommendation.id)).where(SubscriptionRecommendation.owner_subject_id == owner_subject_id, SubscriptionRecommendation.status == "active")) or 0
@@ -79,8 +82,23 @@ class ForecastService:
             "active_subscriptions": active_subs,
             "active_groups": active_groups,
             "recommendations_active": recs,
+            "saved_this_month_minor": self._saved_between(owner_subject_id, month, next_month),
+            "saved_this_year_minor": self._saved_between(owner_subject_id, month, year_end),
             "currency": "RUB",
         }
+
+    def _saved_between(self, owner_subject_id: str, start: date, end: date) -> int:
+        total = 0
+        inactive_statuses = ["cancelled", "expired", "archived"]
+        subs = self.session.scalars(select(Subscription).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None), Subscription.status.in_(inactive_statuses), Subscription.group_id.is_(None), Subscription.renewal_date.is_not(None))).all()
+        groups = self.session.scalars(select(SubscriptionGroup).where(SubscriptionGroup.owner_subject_id == owner_subject_id, SubscriptionGroup.deleted_at.is_(None), SubscriptionGroup.status.in_(inactive_statuses), SubscriptionGroup.renewal_date.is_not(None))).all()
+        for item in [*subs, *groups]:
+            norm = normalize_amount(item.amount_minor, item.billing_interval, item.amount_model)
+            amount = norm.interval_amount_minor or 0
+            for starts_on in next_occurrence_dates(item.renewal_date, item.billing_interval, months_ahead=14, today=start):
+                if start <= starts_on < end and starts_on < date.today():
+                    total += amount
+        return total
 
     def scenario(self, owner_subject_id: str, subscription_ids: list[UUID], group_ids: list[UUID]) -> dict:
         current = self.summary(owner_subject_id)["yearly_total_minor"]

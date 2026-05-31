@@ -53,4 +53,6 @@ class DashboardSummary(BaseModel):
     active_subscriptions: int
     active_groups: int
     recommendations_active: int
+    saved_this_month_minor: int = 0
+    saved_this_year_minor: int = 0
     currency: str = "RUB"

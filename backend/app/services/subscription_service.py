@@ -76,6 +76,8 @@ class SubscriptionService:
         self.session.flush()
         self._write_price_history(item, actor_subject_id)
         self._sync(item)
+        if group:
+            CalendarSyncService().sync_group(group)
         write_audit(self.session, owner_subject_id=owner_subject_id, actor_subject_id=actor_subject_id, action="subscription_created", target_type="subscription", target_id=str(item.id), payload={"name": item.name})
         self.session.commit()
         self.session.refresh(item)
@@ -127,6 +129,8 @@ class SubscriptionService:
         item.updated_at = datetime.now(timezone.utc)
         self._write_price_history(item, actor_subject_id)
         self._sync(item)
+        if item.group_id and item.group:
+            CalendarSyncService().sync_group(item.group)
         write_audit(self.session, owner_subject_id=owner_subject_id, actor_subject_id=actor_subject_id, action="subscription_updated", target_type="subscription", target_id=str(item.id), payload={"changed_fields": list(data.keys())})
         self.session.commit()
         self.session.refresh(item)

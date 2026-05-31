@@ -19,6 +19,7 @@ class PlannerSubscriptionEventPayload(BaseModel):
     priority: int = 1
     color: str = "#111111"
     color_dark: str = "#f5f5f5"
+    details_url: str | None = None
 
 
 class PlannerClient:
@@ -60,6 +61,20 @@ class PlannerClient:
         except httpx.HTTPError as exc:
             raise RuntimeError(str(exc)) from exc
 
+    def delete_subscription_events_by_prefix(self, external_ref_prefix: str) -> None:
+        if not self.settings.planner_internal_url:
+            return
+        try:
+            response = httpx.delete(
+                f"{self.settings.planner_internal_url.rstrip('/')}/subscription-events/by-prefix/{external_ref_prefix}",
+                headers=self._headers(),
+                timeout=4.0,
+            )
+            if response.status_code not in {200, 204, 404}:
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(str(exc)) from exc
+
 
 def renewal_datetime(renewal_date, timezone_name: str = "Europe/Moscow") -> datetime:
-    return datetime.combine(renewal_date, time(hour=9), ZoneInfo(timezone_name))
+    return datetime.combine(renewal_date, time(hour=12), ZoneInfo(timezone_name))

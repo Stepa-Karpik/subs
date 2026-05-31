@@ -13,21 +13,14 @@ from app.services.billing_calculator import normalize_amount
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 def _create_rec(session, owner, target_type, target_id, type_, severity, confidence, title, explanation, saving=None):
-    existing = session.scalar(select(SubscriptionRecommendation).where(SubscriptionRecommendation.owner_subject_id == owner, SubscriptionRecommendation.target_type == target_type, SubscriptionRecommendation.target_id == target_id, SubscriptionRecommendation.type == type_, SubscriptionRecommendation.status == "active"))
+    existing = session.scalar(select(SubscriptionRecommendation).where(SubscriptionRecommendation.owner_subject_id == owner, SubscriptionRecommendation.target_type == target_type, SubscriptionRecommendation.target_id == target_id, SubscriptionRecommendation.type == type_))
     if existing:
         return existing
     rec = SubscriptionRecommendation(owner_subject_id=owner, target_type=target_type, target_id=target_id, type=type_, severity=severity, confidence=confidence, title=title, explanation=explanation, estimated_saving_minor=saving)
     session.add(rec)
     return rec
 
-@router.get("")
-def list_recommendations(request: Request, current_user=Depends(get_current_user), session: Session = Depends(get_db)):
-    items = session.scalars(select(SubscriptionRecommendation).where(SubscriptionRecommendation.owner_subject_id == current_user.user_id).order_by(SubscriptionRecommendation.created_at.desc())).all()
-    return success_response(data=[RecommendationRead.model_validate(item).model_dump(mode="json") for item in items], request=request)
-
-@router.post("/run")
-def run_recommendations(request: Request, current_user=Depends(get_current_user), session: Session = Depends(get_db)):
-    owner = current_user.user_id
+def _run_analysis(session: Session, owner: str) -> None:
     subs = session.scalars(select(Subscription).where(Subscription.owner_subject_id == owner, Subscription.deleted_at.is_(None), Subscription.status.in_(["active", "trial"]))).all()
     by_category = defaultdict(list)
     today = date.today()
@@ -38,9 +31,10 @@ def run_recommendations(request: Request, current_user=Depends(get_current_user)
             _create_rec(session, owner, "subscription", sub.id, "missing_data", "warning", 0.92, "Нужно заполнить данные", f"В подписке «{sub.name}» не хватает даты или суммы для точного прогноза.")
         if sub.amount_model == "variable" and sub.estimate_confidence == "low":
             _create_rec(session, owner, "subscription", sub.id, "missing_data", "info", 0.72, "Уточните прогноз", f"«{sub.name}» считается по примерной сумме. После оплаты отметьте фактическую сумму.")
-        if sub.renewal_date and sub.renewal_date <= today + timedelta(days=7):
+        trial_date = sub.trial_end_date or (sub.renewal_date if sub.status == "trial" else None)
+        if trial_date and today <= trial_date <= today + timedelta(days=7):
             norm = normalize_amount(sub.amount_minor, sub.billing_interval, sub.amount_model)
-            _create_rec(session, owner, "subscription", sub.id, "upcoming_renewal", "important", 0.8, "Скоро продление", f"«{sub.name}» продлится в ближайшие 7 дней.", norm.yearly_minor)
+            _create_rec(session, owner, "subscription", sub.id, "upcoming_trial_end", "important", 0.8, "Заканчивается пробный период", f"У «{sub.name}» заканчивается пробный период или доступ в ближайшие 7 дней.", norm.yearly_minor)
     for category, items in by_category.items():
         paid = [item for item in items if item.amount_model not in {"free", "group_child", "unknown"}]
         if len(paid) > 1:
@@ -50,6 +44,16 @@ def run_recommendations(request: Request, current_user=Depends(get_current_user)
     for group in groups:
         if not group.subscriptions:
             _create_rec(session, owner, "group", group.id, "group_inefficient", "info", 0.6, "Пустая группа", f"В группе «{group.name}» пока нет подписок, но цена учитывается в прогнозе.", group.amount_minor)
+
+@router.get("")
+def list_recommendations(request: Request, current_user=Depends(get_current_user), session: Session = Depends(get_db)):
+    items = session.scalars(select(SubscriptionRecommendation).where(SubscriptionRecommendation.owner_subject_id == current_user.user_id, SubscriptionRecommendation.status == "active").order_by(SubscriptionRecommendation.created_at.desc())).all()
+    return success_response(data=[RecommendationRead.model_validate(item).model_dump(mode="json") for item in items], request=request)
+
+@router.post("/run")
+def run_recommendations(request: Request, current_user=Depends(get_current_user), session: Session = Depends(get_db)):
+    owner = current_user.user_id
+    _run_analysis(session, owner)
     session.commit()
     return list_recommendations(request, current_user, session)
 
