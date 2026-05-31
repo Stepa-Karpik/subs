@@ -72,6 +72,37 @@ jobs:
             if [ ! -f .env ]; then
               cp .env.example .env
             fi
+            set_env() {
+              key="$1"
+              value="$2"
+              python3 - "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+key, value = sys.argv[1], sys.argv[2]
+path = Path(".env")
+lines = path.read_text().splitlines() if path.exists() else []
+out = []
+written = False
+for line in lines:
+    if line.startswith(key + "="):
+        out.append(f"{key}={value}")
+        written = True
+    else:
+        out.append(line)
+if not written:
+    out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n")
+PY
+            }
+            planner_key="$(grep -E '^PLANNER_INTERNAL_API_KEY=' /opt/smart_planner/.env 2>/dev/null | cut -d= -f2- || true)"
+            [ -n "$planner_key" ] && set_env PLANNER_INTERNAL_API_KEY "$planner_key"
+            grep -q '^SUBS_INTERNAL_API_KEY=change-me$' .env && set_env SUBS_INTERNAL_API_KEY "$(openssl rand -hex 32)"
+            grep -q '^ACCOUNT_IDENTIFIER_ENCRYPTION_KEY=change-this-secret$' .env && set_env ACCOUNT_IDENTIFIER_ENCRYPTION_KEY "$(openssl rand -hex 32)"
+            grep -q '^ACCOUNT_IDENTIFIER_HASH_PEPPER=change-this-pepper$' .env && set_env ACCOUNT_IDENTIFIER_HASH_PEPPER "$(openssl rand -hex 32)"
+            set_env ALLOW_DEV_AUTH false
+            set_env NEXT_PUBLIC_API_URL https://subs.nerior.ru/api/v1
+            set_env NEXT_PUBLIC_AUTH_LOGIN_URL https://auth.nerior.ru/login
+            set_env NEXT_PUBLIC_ADMIN_URL https://admin.nerior.ru
             docker network inspect ecosystem >/dev/null 2>&1 || docker network create ecosystem
             docker compose --project-name nerior_subs up -d --build --remove-orphans
             docker image prune -f
