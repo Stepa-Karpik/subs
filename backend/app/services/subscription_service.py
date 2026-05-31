@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -84,8 +84,10 @@ class SubscriptionService:
     def list(self, owner_subject_id: str, *, q: str | None = None, status: str | None = None, interval: str | None = None, category: str | None = None, group_id: UUID | None = None, limit: int = 100, offset: int = 0):
         stmt = select(Subscription).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None))
         if q:
-            pattern = f"%{q.strip()}%"
-            stmt = stmt.where(or_(Subscription.name.ilike(pattern), Subscription.service_url.ilike(pattern), Subscription.category_key.ilike(pattern)))
+            value = q.strip()
+            pattern = f"%{value}%"
+            account_hash = hash_identifier(value, self.settings.account_identifier_hash_pepper)
+            stmt = stmt.where(or_(Subscription.name.ilike(pattern), Subscription.service_url.ilike(pattern), Subscription.category_key.ilike(pattern), Subscription.account_identifier_hash == account_hash))
         if status:
             stmt = stmt.where(Subscription.status == status)
         if interval:
@@ -94,10 +96,8 @@ class SubscriptionService:
             stmt = stmt.where(Subscription.category_key == category)
         if group_id:
             stmt = stmt.where(Subscription.group_id == group_id)
-        total = self.session.scalar(select(Subscription.id).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None)).count()) if False else None
+        total = self.session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
         items = self.session.scalars(stmt.order_by(Subscription.renewal_date.is_(None), Subscription.renewal_date.asc(), Subscription.name.asc()).offset(offset).limit(limit)).all()
-        count_stmt = select(Subscription).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None))
-        total = len(self.session.scalars(count_stmt).all())
         return items, total
 
     def get(self, owner_subject_id: str, subscription_id: UUID) -> Subscription:

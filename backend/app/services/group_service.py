@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationAppError
@@ -34,7 +34,7 @@ class GroupService:
             pattern = f"%{q.strip()}%"
             stmt = stmt.where(or_(SubscriptionGroup.name.ilike(pattern), SubscriptionGroup.service_url.ilike(pattern)))
         items = self.session.scalars(stmt.order_by(SubscriptionGroup.renewal_date.is_(None), SubscriptionGroup.renewal_date.asc(), SubscriptionGroup.name.asc()).offset(offset).limit(limit)).all()
-        total = len(self.session.scalars(select(SubscriptionGroup).where(SubscriptionGroup.owner_subject_id == owner_subject_id, SubscriptionGroup.deleted_at.is_(None))).all())
+        total = self.session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
         return items, total
 
     def get(self, owner_subject_id: str, group_id: UUID) -> SubscriptionGroup:
