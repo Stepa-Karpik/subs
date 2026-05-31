@@ -27,3 +27,6 @@ subs.db
 # IDE
 .idea/
 .vscode/
+
+# TypeScript
+*.tsbuildinfo
