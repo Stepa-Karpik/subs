@@ -78,10 +78,10 @@ jobs:
               python3 -c 'from pathlib import Path; import sys; key,value=sys.argv[1],sys.argv[2]; path=Path(".env"); lines=path.read_text().splitlines() if path.exists() else []; pref=key+"="; found=any(line.startswith(pref) for line in lines); lines=[pref+value if line.startswith(pref) else line for line in lines]; lines += [] if found else [pref+value]; path.write_text("\n".join(lines)+"\n")' "$key" "$value"
             }
             planner_key="$(grep -E '^PLANNER_INTERNAL_API_KEY=' /opt/smart_planner/.env 2>/dev/null | cut -d= -f2- || true)"
-            [ -n "$planner_key" ] && set_env PLANNER_INTERNAL_API_KEY "$planner_key"
-            grep -q '^SUBS_INTERNAL_API_KEY=change-me$' .env && set_env SUBS_INTERNAL_API_KEY "$(openssl rand -hex 32)"
-            grep -q '^ACCOUNT_IDENTIFIER_ENCRYPTION_KEY=change-this-secret$' .env && set_env ACCOUNT_IDENTIFIER_ENCRYPTION_KEY "$(openssl rand -hex 32)"
-            grep -q '^ACCOUNT_IDENTIFIER_HASH_PEPPER=change-this-pepper$' .env && set_env ACCOUNT_IDENTIFIER_HASH_PEPPER "$(openssl rand -hex 32)"
+            if [ -n "$planner_key" ]; then set_env PLANNER_INTERNAL_API_KEY "$planner_key"; fi
+            if grep -q '^SUBS_INTERNAL_API_KEY=change-me$' .env; then set_env SUBS_INTERNAL_API_KEY "$(openssl rand -hex 32)"; fi
+            if grep -q '^ACCOUNT_IDENTIFIER_ENCRYPTION_KEY=change-this-secret$' .env; then set_env ACCOUNT_IDENTIFIER_ENCRYPTION_KEY "$(openssl rand -hex 32)"; fi
+            if grep -q '^ACCOUNT_IDENTIFIER_HASH_PEPPER=change-this-pepper$' .env; then set_env ACCOUNT_IDENTIFIER_HASH_PEPPER "$(openssl rand -hex 32)"; fi
             set_env ALLOW_DEV_AUTH false
             set_env NEXT_PUBLIC_API_URL https://subs.nerior.ru/api/v1
             set_env NEXT_PUBLIC_AUTH_LOGIN_URL https://auth.nerior.ru/login
