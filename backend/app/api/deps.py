@@ -22,9 +22,11 @@ def get_current_user(
     x_display_name: str | None = Header(default=None),
     x_user_email: str | None = Header(default=None),
     x_platform_admin: str | None = Header(default=None),
+    x_internal_key: str | None = Header(default=None),
 ) -> UserContext:
     settings = get_settings()
-    if x_user_id:
+    header_auth_allowed = settings.allow_dev_auth or (settings.subs_internal_api_key and x_internal_key == settings.subs_internal_api_key)
+    if x_user_id and header_auth_allowed:
         return UserContext(user_id=x_user_id, username=x_username or x_user_id, display_name=x_display_name or x_username or x_user_id, email=x_user_email, is_platform_admin=x_platform_admin == "1")
     if ecosystem_session:
         try:
