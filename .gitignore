@@ -1,0 +1,29 @@
+# Local planning/spec docs for product design
+/docs/
+
+# Runtime/build artifacts
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+subs.db
+*.db
+
+# IDE
+.idea/
+.vscode/
