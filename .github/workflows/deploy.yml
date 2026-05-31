@@ -75,24 +75,7 @@ jobs:
             set_env() {
               key="$1"
               value="$2"
-              python3 - "$key" "$value" <<'PY'
-            from pathlib import Path
-            import sys
-            key, value = sys.argv[1], sys.argv[2]
-            path = Path(".env")
-            lines = path.read_text().splitlines() if path.exists() else []
-            out = []
-            written = False
-            for line in lines:
-                if line.startswith(key + "="):
-                    out.append(f"{key}={value}")
-                    written = True
-                else:
-                    out.append(line)
-            if not written:
-                out.append(f"{key}={value}")
-            path.write_text("\n".join(out) + "\n")
-            PY
+              python3 -c 'from pathlib import Path; import sys; key,value=sys.argv[1],sys.argv[2]; path=Path(".env"); lines=path.read_text().splitlines() if path.exists() else []; pref=key+"="; found=any(line.startswith(pref) for line in lines); lines=[pref+value if line.startswith(pref) else line for line in lines]; lines += [] if found else [pref+value]; path.write_text("\n".join(lines)+"\n")' "$key" "$value"
             }
             planner_key="$(grep -E '^PLANNER_INTERNAL_API_KEY=' /opt/smart_planner/.env 2>/dev/null | cut -d= -f2- || true)"
             [ -n "$planner_key" ] && set_env PLANNER_INTERNAL_API_KEY "$planner_key"
