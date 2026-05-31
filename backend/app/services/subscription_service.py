@@ -81,7 +81,7 @@ class SubscriptionService:
         self.session.refresh(item)
         return item
 
-    def list(self, owner_subject_id: str, *, q: str | None = None, status: str | None = None, interval: str | None = None, category: str | None = None, group_id: UUID | None = None, limit: int = 100, offset: int = 0):
+    def list(self, owner_subject_id: str, *, q: str | None = None, status: str | None = None, interval: str | None = None, category: str | None = None, group_id: UUID | None = None, standalone: bool = False, limit: int = 100, offset: int = 0):
         stmt = select(Subscription).where(Subscription.owner_subject_id == owner_subject_id, Subscription.deleted_at.is_(None))
         if q:
             value = q.strip()
@@ -96,6 +96,8 @@ class SubscriptionService:
             stmt = stmt.where(Subscription.category_key == category)
         if group_id:
             stmt = stmt.where(Subscription.group_id == group_id)
+        if standalone:
+            stmt = stmt.where(Subscription.group_id.is_(None))
         total = self.session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
         items = self.session.scalars(stmt.order_by(Subscription.renewal_date.is_(None), Subscription.renewal_date.asc(), Subscription.name.asc()).offset(offset).limit(limit)).all()
         return items, total
